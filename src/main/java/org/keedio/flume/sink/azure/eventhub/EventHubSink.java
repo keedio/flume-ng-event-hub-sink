@@ -39,7 +39,7 @@ public class EventHubSink extends AbstractSink implements Configurable {
 	    transaction.begin();
 		
 		try{
-			/*
+			
 			event = channel.take();
 			if(event == null) {
 	            result = Status.BACKOFF;
@@ -50,9 +50,9 @@ public class EventHubSink extends AbstractSink implements Configurable {
 	            //counter.incrementBatchUnderflowCount();
 	          }
 			transaction.commit();
-			*/
 			
 			
+			/*
 		    long processedEvents = 0;
 			
 			for (; processedEvents < eventHubSinkUtil.getBatchSize(); processedEvents += 1) {
@@ -86,7 +86,7 @@ public class EventHubSink extends AbstractSink implements Configurable {
 			
 
 			transaction.commit();
-			
+			*/
 		} catch (Exception ex) {
 		      String errorMsg = "Failed to publish events";
 		      logger.error("Failed to publish events", ex);
