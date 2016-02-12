@@ -1,6 +1,7 @@
 package org.keedio.flume.sink.azure.eventhub;
 
-import java.util.List;
+import java.util.ArrayList;
+import java.util.Collection;
 
 import org.apache.flume.Channel;
 import org.apache.flume.Context;
@@ -9,11 +10,13 @@ import org.apache.flume.EventDeliveryException;
 import org.apache.flume.Transaction;
 import org.apache.flume.conf.Configurable;
 import org.apache.flume.sink.AbstractSink;
+import org.apache.qpid.amqp_1_0.type.Binary;
+import org.apache.qpid.amqp_1_0.type.Section;
+import org.apache.qpid.amqp_1_0.type.messaging.Data;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.google.common.base.Throwables;
-import com.microsoft.eventhubs.client.EventHubClient;
 import com.microsoft.eventhubs.client.EventHubException;
 import com.microsoft.eventhubs.client.EventHubSender;
 
@@ -25,7 +28,7 @@ public class EventHubSink extends AbstractSink implements Configurable {
 	private EventHubSinkUtil eventHubSinkUtil;
 	EventHubSender sender;
 	
-	private List<byte[]> messageList;
+	private Collection<Section> sectionCollection;
 	
 	@Override
 	public Status process() throws EventDeliveryException {
@@ -37,22 +40,11 @@ public class EventHubSink extends AbstractSink implements Configurable {
 		
 		transaction = channel.getTransaction();
 	    transaction.begin();
+	    
+	    sectionCollection.clear();
 		
 		try{
-			
-			event = channel.take();
-			if(event == null) {
-	            result = Status.BACKOFF;
-	            //counter.incrementBatchEmptyCount();
-	          } else {
-	        	byte[] eventBody = event.getBody();
-	  			sender.send(eventBody);
-	            //counter.incrementBatchUnderflowCount();
-	          }
-			transaction.commit();
-			
-			
-			/*
+						
 		    long processedEvents = 0;
 			
 			for (; processedEvents < eventHubSinkUtil.getBatchSize(); processedEvents += 1) {
@@ -62,34 +54,26 @@ public class EventHubSink extends AbstractSink implements Configurable {
 		          // no events available in channel
 		          if(processedEvents == 0) {
 		            result = Status.BACKOFF;
-		            counter.incrementBatchEmptyCount();
-		          } else {
-		            counter.incrementBatchUnderflowCount();
 		          }
 		          break;
 		        }
 		        
 		        byte[] eventBody = event.getBody();
-		        messageList.add(eventBody);
+		        sectionCollection.add(new Data(new Binary(eventBody)));
 		    }
 			
 			// publish batch and commit.
 			if (processedEvents > 0) {
-				long startTime = System.nanoTime();
-				sender.send(messageList);
-				long endTime = System.nanoTime();
-				counter.addToKafkaEventSendTimer((endTime - startTime)
-						/ (1000 * 1000));
-				counter.addToEventDrainSuccessCount(Long.valueOf(messageList
-						.size()));
+				
+				sender.send(sectionCollection);
+				counter.increaseCounterMessageSent();
 			}
 			
-
 			transaction.commit();
-			*/
-		} catch (Exception ex) {
+			
+		}catch (EventHubException ex) {
 		      String errorMsg = "Failed to publish events";
-		      logger.error("Failed to publish events", ex);
+		      logger.error(errorMsg, ex);
 		      result = Status.BACKOFF;
 		      if (transaction != null) {
 		        try {
@@ -101,19 +85,16 @@ public class EventHubSink extends AbstractSink implements Configurable {
 		        }
 		      }
 		      throw new EventDeliveryException(errorMsg, ex);
-		    } finally {
+		} finally {
 		      if (transaction != null) {
 		        transaction.close();
 		      }
-		    }
+		}
 		return result;	
 	}
 
 	@Override
 	public synchronized void start() {
-		// instantiate the producer
-		//ProducerConfig config = new ProducerConfig(kafkaProps);
-		//producer = new Producer<String, byte[]>(config);
 		sender = eventHubSinkUtil.createSender();
 		
 		counter.start();
@@ -136,6 +117,8 @@ public class EventHubSink extends AbstractSink implements Configurable {
 	public void configure(Context context) {
 		
 		eventHubSinkUtil = new EventHubSinkUtil(context); 
+		
+		sectionCollection = new ArrayList<Section>(eventHubSinkUtil.getBatchSize());
 		
 		if (counter == null){
 			counter = new EventHubSinkCounter(getName());
